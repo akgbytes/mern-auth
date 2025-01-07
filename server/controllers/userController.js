@@ -3,6 +3,7 @@ const catchAsyncError = require("../middlewares/catchAsyncError");
 const User = require("../models/user");
 const sendEmail = require("../utils/sendEmail");
 const client = require("../configs/twilio");
+const sendToken = require("../utils/sendToken");
 
 const register = catchAsyncError(async (req, res, next) => {
   try {
@@ -134,6 +135,83 @@ const generateEmailTemplate = (verificationCode) => {
       <p>Your Company Contact Information</p>`;
 };
 
+const verifyRegister = catchAsyncError(async (req, res, next) => {
+  const { phone, email, otp } = req.body;
+  function validatePhoneNumber(phone) {
+    const phoneRegex = /^\+91\d{10}$/;
+    return phoneRegex.test(phone);
+  }
+
+  if (!validatePhoneNumber(phone)) {
+    return next(new ErrorHandler("Invalid phone number", 400));
+  }
+
+  try {
+    const userAllEntries = await User.find({
+      $or: [
+        {
+          email,
+          accountVerified: false,
+        },
+        {
+          phone,
+          accountVerified: false,
+        },
+      ],
+    }).sort({ createdAt: -1 });
+
+    if (!userAllEntries.length) {
+      return next(new ErrorHandler("User not found", 400));
+    }
+
+    let user;
+    if (userAllEntries.length > 1) {
+      user = userAllEntries[0];
+
+      await User.deleteMany({
+        _id: { $ne: user._id },
+        $or: [
+          { phone, accountVerified: false },
+          {
+            email,
+            accountVerified: false,
+          },
+        ],
+      });
+    } else {
+      user = userAllEntries[0];
+    }
+
+    if (user.verificationCode !== otp) {
+      return next(new ErrorHandler("Invalid OTP", 400));
+    }
+
+    const currentTime = Date.now();
+    const verificationCodeExpireTime = new Date(
+      user.verificationCodeExpire
+    ).getTime();
+    if (currentTime > verificationCodeExpireTime) {
+      return next(new ErrorHandler("OTP expired", 400));
+    }
+
+    user.accountVerified = true;
+    user.verificationCode = null;
+    user.verificationCodeExpire = null;
+
+    await user.save({ validateModifiedOnly: true });
+
+    sendToken(user, 200, "User verified successfully", res);
+  } catch (error) {
+    next(new ErrorHandler(error.message, 500));
+  }
+});
+
+const login = catchAsyncError((req, res, next) => {});
+const verifyLogin = catchAsyncError((req, res, next) => {});
+
 module.exports = {
   register,
+  verifyRegister,
+  login,
+  verifyLogin,
 };
