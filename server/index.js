@@ -4,6 +4,7 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const connectDB = require("./configs/db");
 const { errorMiddleware } = require("./middlewares/error");
+const userRouter = require("./routes/user");
 
 // app configs
 const PORT = process.env.PORT;
@@ -26,6 +27,8 @@ app.use(
 app.get("", (req, res) => {
   res.send("WELCOME TO OUR SERVER");
 });
+
+app.use("/api/v1/user", userRouter);
 
 //error handling
 app.use(errorMiddleware);
